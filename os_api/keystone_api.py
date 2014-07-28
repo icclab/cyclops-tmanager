@@ -34,11 +34,16 @@ import httplib2 as http
 import sys, re
 import json
 import getpass
+import os
 
 try:
     from urlparse import urlparse
 except ImportError:
     from urllib.parse import urlparse
+
+dir_path=os.path.join(os.path.dirname( __file__ ), '..',)
+config = {}
+execfile(dir_path+"/config.conf", config) 
 
 def strip_non_ascii(string):
     ''' 
@@ -107,7 +112,7 @@ def get_endpoints(tokenId, uri):
                'Accept': 'application/json',
                'Content-Type': 'application/json;'
     }
-    uri="http://160.85.4.10:5000"
+    uri=config["AUTH_URI"]
     path = '/v2.0/tokens/' + tokenId + '/endpoints'
     target = urlparse(uri+path)
     method = 'GET'

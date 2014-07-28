@@ -33,11 +33,15 @@ import json
 from Queue import Queue
 from threading import Thread
 
+dir_path=os.path.join(os.path.dirname( __file__ ), '..',)
+config = {}
+execfile("config.conf", config) 
+
 def main(argv):  
     running_threads={}   
     print ("In main before while, running threads: %s" %running_threads) 
     HOST = '0.0.0.0'   # Symbolic name meaning all available interfaces
-    PORT = 9005 # Arbitrary non-privileged port 
+    PORT = config["PORT_SOCKET"] # Arbitrary non-privileged port 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print("Socket created.")
     try:
@@ -51,16 +55,6 @@ def main(argv):
         conn, addr = s.accept()
         print("Connection accepted.")
         pool.add_task(socket_connection,conn,running_threads)
-        #pid=os.fork()
-        #print("Forked with pid %s" %pid)
-        #if pid==-1:
-        #    os._exit(0)
-        #elif pid==0:
-        #    socket_connection(s,conn,running_threads)
-        #    print (pid, running_threads)
-        #else:
-        #    conn.close()
-        #print(pid, running_threads)
         print("In while poool running threads %s" %running_threads)
         pool.wait_completion()
     return
@@ -108,7 +102,6 @@ def recvall(sock, n):
     return data
  
 def socket_connection(conn,running_threads): 
-    #s.close()
     data = conn.recv(1024)
     print("Received data.")
     li_var=[]
@@ -116,8 +109,6 @@ def socket_connection(conn,running_threads):
     if data=="check threads":
         conn.sendall("ok")
         t_name=conn.recv(1024)
-        #with open("threads.json") as f:
-        #    running_threads=json.load(f)
         print (running_threads)
         print(t_name)
         if t_name in running_threads:
@@ -130,8 +121,6 @@ def socket_connection(conn,running_threads):
     if data=="periodic_stop":
         conn.sendall("ok")
         t_name=conn.recv(1024)
-        #with open('threads.json') as f:
-        #    data = json.load(f)
         canceled=False
         print(running_threads)
         for key,value in running_threads.iteritems(): 
@@ -156,7 +145,6 @@ def socket_connection(conn,running_threads):
                 msglen = struct.unpack('>I', raw_msglen)[0]
                 # Read the message data
                 rez=recvall(conn, msglen)
-                #result = json.loads(rez)
                 li_var.append(rez)
                 print("Received message %s" %rez)
                 if rez=="None":
@@ -171,20 +159,10 @@ def socket_connection(conn,running_threads):
             thread_name="thread"+user
             print(thread_name)
             name=thread_name
-            print("Thread created %s." %thread_name)
-            #my_dict={thread_name:user}
-            #with open("threads.json") as f:
-            #    data = json.load(f)
-            #data.update(my_dict)
-            #with open('threads.json', 'w') as f:
-            #    json.dump(data, f)
-            
+            print("Thread created %s." %thread_name)           
             thread_name=periodic_web.MyThread(li_var[0],li_var[1],li_var[2],li_var[3],li_var[4],li_var[5],li_var[6],li_var[7],li_var[8],li_var[9],li_var[10],thread_name)
             thread_name.start()
-            #my_dict={thread_name:user}
-            #.update(my_dict)
             running_threads[name]=thread_name
-            #running_threads=add_threads(running_threads,name,thread_name)
             print("Thread started %s." %thread_name)
             print ("Running threads %s" %running_threads)
         conn.close()

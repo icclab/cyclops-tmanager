@@ -25,10 +25,11 @@ Created on Apr 9, 2014
 
 from threading import Thread
 import sys,os
+from sympy.core import sympify
+import copy
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "web_ui.settings")
 import mysql.connector
 from mysql.connector import errorcode
-path=os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..','icclab-rcb'))
 import datetime
 import time
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', 'os_api')))
@@ -36,6 +37,10 @@ from os_api import ceilometer_api
 from os_api import keystone_api
 from time import gmtime, strftime, strptime
 from threading import Timer
+
+dir_path=os.path.join(os.path.dirname( __file__ ), '..',)
+config = {}
+execfile("config.conf", config) 
 
 def is_number(s):
     """
@@ -56,7 +61,7 @@ def is_number(s):
         return False
 
 
-def periodic_counter(self,token_id,token_metering,meters_used,meter_list,func,user,time,from_date,from_time,end_date,end_time,user_id_stack,pricing_list):
+def periodic_counter(self,token_id,token_metering,meters_used,meter_list,func,user,time,from_date,from_time,end_date,end_time,user_id_stack,pricing_list,params,unit):
     """
 
     Execute the periodic counter.
@@ -79,27 +84,17 @@ def periodic_counter(self,token_id,token_metering,meters_used,meter_list,func,us
       DateTime: The new start time for the next loop if the duration end is before the end time of the loop.
       
     """        
-    udr,new_time=get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,True,from_date,from_time,end_date,end_time,user_id_stack)
-    price=pricing(self,user,meter_list,pricing_list,udr)
+    udr,new_time=get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,True,from_date,from_time,end_date,end_time,user_id_stack,params)
+    price=pricing(self,user,meters_used,pricing_list,udr,unit)
     return new_time
-
-#def get_delta_samples(self,token_data,token_id,user,meter):
-    #delta=0.0
-    #meter2=str(meter)
-    #conn = sqlite3.connect(path+'/db.sqlite3',check_same_thread=False)
-    #cursor = conn.execute('SELECT max(ID) FROM MAIN_MENU_METERSCOUNTER')
-    #last = cursor.fetchone()
-    #samples =list( MetersCounter.objects.filter(user_id=user,meter_name = meter))
-    #last=str(samples[-1])
-    #return last
         
-def get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,web_bool,from_date,from_time,end_date,end_time,user_id_stack):   
+def get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,web_bool,from_date,from_time,end_date,end_time,user_id_stack,params):   
     try:
-        cnx = mysql.connector.connect(user='icclab',
+        cnx = mysql.connector.connect(user=config["USER"],
                                       database='db_cyclops',
-                                      password='icclab',
-                                      host='160.85.4.235',
-                                      port='3306')
+                                      password=config["PASSWORD"],
+                                      host=config["HOST"],
+                                      port=config["PORT_DB"])
         cursor=cnx.cursor()
     except mysql.connector.Error as err:
         if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -142,10 +137,9 @@ def get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,web_bo
         data_metercounter = (meters_used[i],user,total[i],unit,date_time)
         cursor.execute(add_metercounter, data_metercounter)
 
-        for i in range(len(delta_list)):
-            for j in range(len(total)):
-                if i==j:
-                    delta_list[i]=total[j]
+        for m in range(len(params)):
+            if params[m]==meters_used[i]:
+                delta_list[m]=total[i]
     add_udr = ("INSERT INTO main_menu_udr "
                         "(user_id_id,timestamp,pricing_func_id_id,param1,param2,param3,param4,param5) "
                         "VALUES (%s, %s, %s, %s, %s,%s,%s,%s)")
@@ -160,13 +154,13 @@ def get_udr(self,token_id,token_metering,user,meters_used,meter_list,func,web_bo
 
 
 
-def pricing(self,user,meter_list,pricing_list,udr):
+def pricing(self,user,meters_used,pricing_list,udr,unit):
     try:
-        cnx = mysql.connector.connect(user='icclab',
+        cnx = mysql.connector.connect(user=config["USER"],
                                       database='db_cyclops',
-                                      password='icclab',
-                                      host='160.85.4.235',
-                                      port='3306')
+                                      password=config["PASSWORD"],
+                                      host=config["HOST"],
+                                      port=config["PORT_DB"])
         cursor=cnx.cursor()
     except mysql.connector.Error as err:
         if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -180,7 +174,7 @@ def pricing(self,user,meter_list,pricing_list,udr):
     cursor.execute(query,data_query)
     for row in cursor:
         func_id=row[0]
-     
+    price_helper_list=copy.copy(pricing_list) 
     udr_list=[]
     udr_list.append(udr['param1'])
     udr_list.append(udr['param2'])
@@ -193,38 +187,23 @@ def pricing(self,user,meter_list,pricing_list,udr):
             
     k=0
     for i in range(len(pricing_list)):
-        j=0
-        while j<len(meter_list):
-            if pricing_list[i]==meter_list[j]["meter-name"]:
-                pricing_list[i]=udr_list[k]
-                k+=1
-            else:
-                j=j+1 
-            
+        if pricing_list[i] in meters_used:
+            price_helper_list[i]=udr_list[k]
+        if i%2==0:
+            k+=1
+    print pricing_list        
     price=0.0 
-            
+    str_expr=""
     for i in range(len(pricing_list)):
-        if i==0:   
-            if is_number(str(pricing_list[i])):    
-                price=price+float(str(pricing_list[i]))
- 
-        if i%2!=0:
-            if pricing_list[i] in ["+","-","*","/","%"]:
-                if is_number(str(pricing_list[i+1])):
-                    x=float(str(pricing_list[i+1]))                             
-                else:
-                    break                          
-                if pricing_list[i]=="+":
-                    price=price+x
-                if pricing_list[i]=="-": 
-                    price=price-x
-                if pricing_list[i]=="*":
-                    price=price*x
-                if pricing_list[i]=="/":
-                    if x!=0:
-                        price=price/x
-                if pricing_list[i]=="%":
-                    price=price*x/100.0
+        if i!=None:
+            str_expr+=str(price_helper_list[i])
+        else:
+            break
+    print(str_expr)
+    expr=sympify(str_expr)   
+    price=expr.evalf()
+    print price
+    price=price*float(unit)   
     date_time=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     add_pricecdr = ("INSERT INTO main_menu_pricecdr "
                "(price,timestamp,user_id_id,pricing_func_id_id) "
@@ -242,13 +221,13 @@ def pricing(self,user,meter_list,pricing_list,udr):
 class MyThread(Thread):
     def __init__(self, username,password,domain,project,user,time_f,from_date,from_time,end_date,end_time,user_id_stack,name):
         super(MyThread, self).__init__()
-        auth_uri = 'http://160.85.4.10:5000'
+        auth_uri = config["AUTH_URI"]
         try:
-            cnx = mysql.connector.connect(user='icclab',
+            cnx = mysql.connector.connect(user=config["USER"],
                                       database='db_cyclops',
-                                      password='icclab',
-                                      host='160.85.4.235',
-                                      port='3306')
+                                      password=config["PASSWORD"],
+                                      host=config["HOST"],
+                                      port=config["PORT_DB"])
             cursor=cnx.cursor()
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -266,8 +245,7 @@ class MyThread(Thread):
         self.cancelled = False
         self.token_id=token_data["token_id"] 
         self.token_metering=token_data["metering"]
-        self.user=user
-        #self.user=StackUser.objects.get(id=user)       
+        self.user=user    
         self.from_date=from_date
         self.from_time=from_time
         self.end_date=end_date
@@ -277,8 +255,9 @@ class MyThread(Thread):
         status_meter_list, self.meter_list = ceilometer_api.get_meter_list(self.token_id, self.token_metering)                              
         self.pricing_list=[]
         self.meters_used=[]
-        query = ("SELECT param1,sign1,param2,sign2,param3,sign3,param4,sign4,param5,ID FROM main_menu_pricingfunc WHERE user_id_id=%s")
+        query = ("SELECT param1,sign1,param2,sign2,param3,sign3,param4,sign4,param5,ID,unit FROM main_menu_pricingfunc WHERE user_id_id=%s")
         data_query=user
+        self.params=[]
         cursor.execute(query,data_query)
         for row in cursor:
             self.pricing_list.append(row[0])
@@ -290,7 +269,13 @@ class MyThread(Thread):
             self.pricing_list.append(row[6])
             self.pricing_list.append(row[7])
             self.pricing_list.append(row[8])
+            self.params.append(row[0])
+            self.params.append(row[2])
+            self.params.append(row[4])
+            self.params.append(row[6])
+            self.params.append(row[8])
             self.func=row[9]  
+            self.unit=row[10]
             print(row)
         print("Inside init thread.")
         cnx.commit()
@@ -313,7 +298,7 @@ class MyThread(Thread):
         print("Inside thread run")
         while not self.cancelled:
             print ("while not cancelled")
-            new_time=periodic_counter(self,self.token_id,self.token_metering,self.meters_used,self.meter_list,self.func,self.user,self.time_f,self.from_date,self.from_time,self.end_date,self.end_time,self.user_id_stack,self.pricing_list)
+            new_time=periodic_counter(self,self.token_id,self.token_metering,self.meters_used,self.meter_list,self.func,self.user,self.time_f,self.from_date,self.from_time,self.end_date,self.end_time,self.user_id_stack,self.pricing_list,self.params,self.unit)
             if new_time=="/":
                 self.from_time=self.end_time
                 self.from_date=self.end_date
