@@ -195,7 +195,7 @@ def pricing(self,user,meters_used,pricing_list,udr,unit):
     price=0.0 
     str_expr=""
     for i in range(len(pricing_list)):
-        if i!=None:
+        if pricing_list[i]!=None:
             str_expr+=str(price_helper_list[i])
         else:
             break
